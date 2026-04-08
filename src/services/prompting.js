@@ -18,6 +18,27 @@ function formatTranscript(entries, fallback = "Sin contexto previo relevante.") 
   return lines.length ? lines.join("\n") : fallback;
 }
 
+function buildPairDirective(character, replyToAgentId) {
+  if (!replyToAgentId) {
+    return {
+      preferredAction: "No fuerces un cruce si la escena no lo pide.",
+      firstLineRule: character.entryStyle || "Entra con una linea propia y firme.",
+      finishMove: character.finisherStyle || "Cierra con una linea de tu personaje, no con moraleja.",
+    };
+  }
+
+  const pairRule = character.relationships?.[replyToAgentId];
+
+  return {
+    preferredAction:
+      pairRule?.preferredAction || "Responde de forma dirigida y deja clara tu postura frente al otro personaje.",
+    firstLineRule:
+      pairRule?.firstLineRule ||
+      "La primera frase debe sonar a contestacion directa, no a opinion escrita en paralelo.",
+    finishMove: pairRule?.finishMove || character.finisherStyle || "Si cierras, que quede una linea con filo.",
+  };
+}
+
 function buildDynamicCue(character, replyToAgentId) {
   if (!replyToAgentId) return "No fuerces un cruce si no hace falta.";
 
@@ -57,6 +78,9 @@ function buildCharacterPromptContext(character) {
   const lexicon = character.voiceLexicon?.join(", ") || "libre";
 
   return [
+    `Entrada natural: ${character.entryStyle}`,
+    `Cuando reaccionas: ${character.reactionStyle}`,
+    `Como cierras una escena: ${character.finisherStyle}`,
     `Tu tono con el usuario: ${character.userAddressStyle}`,
     `Te disparan especialmente: ${triggerTopics}.`,
     `Desprecias: ${despises}.`,
@@ -84,6 +108,26 @@ function buildReferencePressure(character, references) {
   return peers.length ? peers.join("\n") : "No hay otro personaje priorizado por el usuario.";
 }
 
+function buildImmediateReactionCue(character, lastRoundEntry, replyToAgentId) {
+  if (!lastRoundEntry) {
+    return "No hay golpe previo que devolver. Entra desde tu propia energia.";
+  }
+
+  const speaker = getCharacterById(lastRoundEntry.speakerId);
+  const pairDirective = buildPairDirective(character, replyToAgentId || lastRoundEntry.speakerId);
+
+  if (!speaker) {
+    return `Primera frase: ${pairDirective.firstLineRule}`;
+  }
+
+  return [
+    `Acabas de leer a ${speaker.name}.`,
+    `Lo que debes hacer con ese mensaje: ${pairDirective.preferredAction}`,
+    `Regla de primera frase: ${pairDirective.firstLineRule}`,
+    `Si terminas la escena sobre ${speaker.name}: ${pairDirective.finishMove}`,
+  ].join(" ");
+}
+
 export function buildAgentMessages({
   character,
   history,
@@ -109,6 +153,8 @@ export function buildAgentMessages({
   const lastRoundEntry = roundEntries.at(-1) || null;
   const lastSpeaker = lastRoundEntry ? getCharacterById(lastRoundEntry.speakerId) : null;
   const referencePressure = buildReferencePressure(character, references);
+  const pairDirective = buildPairDirective(character, replyToAgentId);
+  const immediateReactionCue = buildImmediateReactionCue(character, lastRoundEntry, replyToAgentId);
 
   const guidanceByPurpose = {
     open: "Entra con una linea fuerte y clara. No expliques de mas.",
@@ -135,6 +181,9 @@ export function buildAgentMessages({
       ? `Vas inmediatamente despues de ${replyTarget}. Tu mensaje debe sentirse dirigido a esa persona, no aislado.`
       : "No estas obligado a hablarle a un personaje concreto.",
     `Dinamica esperada: ${dynamicCue}`,
+    `Movimiento preferido en este turno: ${pairDirective.preferredAction}`,
+    `Disciplina de primera frase: ${pairDirective.firstLineRule}`,
+    `Disciplina de remate: ${pairDirective.finishMove}`,
     `Presion relacional por nombres mencionados: ${referencePressure}`,
     "",
     "Historial reciente:",
@@ -145,6 +194,7 @@ export function buildAgentMessages({
     lastRoundEntry
       ? `Ultimo mensaje a reaccionar: ${lastSpeaker?.name || "Mesa"}: ${lastRoundEntry.text}`
       : "Ultimo mensaje a reaccionar: ninguno.",
+    `Activacion inmediata: ${immediateReactionCue}`,
     "",
     "Nuevo mensaje del usuario:",
     `Usuario: ${userText}`,
@@ -152,7 +202,9 @@ export function buildAgentMessages({
     "Instrucciones de salida:",
     `- ${guidanceByPurpose[purpose]}`,
     "- Habla como este personaje, no como un asistente.",
-    "- Si reaccionas a otro personaje, la primera frase debe tocar lo que acaba de decir o insinuar.",
+    "- Si reaccionas a otro personaje, la primera frase debe tocar lo que acaba de decir o insinuar y sonar a contestacion real.",
+    "- Si respondes a otro personaje, hablale a esa persona; no expliques desde fuera lo que piensas de ella.",
+    "- No abras con marco general, resumen ni contextualizacion blanda.",
     "- Evita repetir ideas ya dichas por el usuario o por la ronda.",
     "- Si otro personaje ya hizo el punto principal, tu trabajo es torcerlo, reforzarlo o rematarlo.",
     "- Prioriza una o dos ideas con pegada, no una explicacion completa.",

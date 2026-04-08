@@ -28,6 +28,25 @@ const GENERIC_CLOSERS = [
   "es una buena reflexion",
   "es una buena pregunta",
 ];
+const PROVOCATION_PATTERNS = [
+  /\bridicul/i,
+  /\bdebil/i,
+  /\bpatet/i,
+  /\bpayaso/i,
+  /\bcalla/i,
+  /\bcallate/i,
+  /\bmiserable/i,
+  /\bbasura/i,
+  /\baburrid/i,
+  /\bcobarde/i,
+  /\bsuperior/i,
+  /\bmas fuerte/i,
+  /\bganaria/i,
+  /\baplast/i,
+  /\bromp/i,
+  /\balma/i,
+  /\bmoral/i,
+];
 
 const CHARACTER_REFERENCE_PATTERNS = CHARACTERS.map((character) => ({
   characterId: character.id,
@@ -132,6 +151,24 @@ function recentAgentTurns(history) {
 function countKeywordHits(text, keywords) {
   const lowered = text.toLowerCase();
   return keywords.reduce((count, keyword) => (lowered.includes(keyword) ? count + 1 : count), 0);
+}
+
+function analyzeEntryPressure(text) {
+  const lowered = String(text || "").toLowerCase();
+  const provocationHits = PROVOCATION_PATTERNS.reduce(
+    (count, pattern) => count + (pattern.test(lowered) ? 1 : 0),
+    0,
+  );
+
+  return {
+    provocationHits,
+    directShot: /\btu\b|\bvos\b|\bte\b|\bcalla\b|\bcallate\b|\bdebil\b|\bridiculo\b|\bpayaso\b|\bpatetico\b/i.test(
+      lowered,
+    ),
+    challenge: /\bganaria\b|\bvs\b|\bversus\b|\bpartir\b|\baplast/i.test(lowered),
+    contempt: /\bridicul/i.test(lowered) || /\bdebil/i.test(lowered) || /\bpatet/i.test(lowered) || /\bbasura/i.test(lowered),
+    moralNeedle: /\balma\b|\bmoral\b|\bculpa\b|\bhumano\b/i.test(lowered),
+  };
 }
 
 function getRelationshipRule(characterId, targetId) {
@@ -316,6 +353,7 @@ function scoreRelationship(character, previousSpeakerId, lastEntry, namesInLastE
 
   const directRule = getRelationshipRule(character, previousSpeakerId);
   const reverseRule = getRelationshipRule(previousSpeakerId, character.id);
+  const pressure = analyzeEntryPressure(lastEntry?.text);
   let score = 0;
   if (character.dynamics.provokes.includes(previousSpeakerId)) score += 28;
   if (character.dynamics.backsUp.includes(previousSpeakerId)) score += 16;
@@ -324,15 +362,35 @@ function scoreRelationship(character, previousSpeakerId, lastEntry, namesInLastE
   score += directRule?.replyBias || 0;
   score += Math.round((directRule?.provokeBias || 0) * 0.75);
   score += Math.round((reverseRule?.provokeBias || 0) * 0.42);
+  if (pressure.provocationHits > 0) {
+    score += Math.min(20, pressure.provocationHits * 4);
+  }
 
   if (namesInLastEntry.includes(character.id)) {
     score += directRule?.namedReplyBias || reverseRule?.namedReplyBias || 26;
+    if (pressure.directShot || pressure.challenge) {
+      score += Math.round((directRule?.interruptBias || reverseRule?.interruptBias || 18) * 0.9);
+    }
+    if (pressure.contempt || pressure.moralNeedle) {
+      score += Math.round((directRule?.provokeBias || 12) * 0.8);
+    }
   }
   if (lastEntry?.replyToAgentId === character.id) {
     score += directRule?.interruptBias || reverseRule?.interruptBias || 24;
+    if (pressure.directShot) {
+      score += 10;
+    }
   }
   if (context.hottestPair?.includes(character.id) && context.hottestPair?.includes(previousSpeakerId)) {
     score += 20;
+  }
+  if (
+    context.hottestPair?.includes(previousSpeakerId) &&
+    !context.hottestPair?.includes(character.id) &&
+    !namesInLastEntry.includes(character.id) &&
+    !character.dynamics.backsUp.includes(previousSpeakerId)
+  ) {
+    score -= 12;
   }
 
   return score;
@@ -344,6 +402,7 @@ function scoreFollowUpSpeaker({ character, context, roundEntries, history, plan 
   const previousSpeakerId = lastEntry?.speakerId || null;
   const firstSpeakerId = roundEntries[0]?.speakerId || null;
   const namesInLastEntry = lastEntry ? extractNamedCharactersFromText(lastEntry.text) : [];
+  const directRule = previousSpeakerId ? getRelationshipRule(character, previousSpeakerId) : null;
 
   let score = 12 + baseContextBoost(character, context);
   score += character.followUpBias * 18;
@@ -353,12 +412,14 @@ function scoreFollowUpSpeaker({ character, context, roundEntries, history, plan 
   if (context.requestedIds.includes(character.id) && roundOccurrences === 0) score += 34;
   if (plan.allowReentry && roundOccurrences === 1 && character.id === firstSpeakerId && roundEntries.length >= 2) {
     score += character.reentryBias * 22;
+    score += directRule?.reentryBias || 0;
     if (context.hottestPair?.includes(character.id)) {
       score += 12;
     }
   }
   if (context.comparison && context.secondaryId === character.id && roundOccurrences === 0) score += 16;
   if (context.hottestPair?.includes(character.id) && roundOccurrences === 0) score += 14;
+  if (namesInLastEntry.includes(character.id) && roundOccurrences === 0) score += 18;
 
   if (roundOccurrences >= runtime.chat.naturalRound.maxSpeakerEntriesPerRound) {
     score -= 120;
@@ -538,9 +599,21 @@ function shouldStopRound({ context, plan, roundEntries, nextCandidateScore, fail
   const coveredReferences =
     context.requestedIds.length === 0 ||
     context.requestedIds.every((characterId) => spokenIds.includes(characterId));
+  const lastEntry = roundEntries.at(-1) || null;
+  const unresolvedNamedTargets = lastEntry
+    ? extractNamedCharactersFromText(lastEntry.text).filter(
+        (characterId) => characterId !== lastEntry.speakerId && !spokenIds.includes(characterId),
+      )
+    : [];
 
   if (context.solo && roundEntries.length >= 1) return true;
   if (context.shortPing && context.directReferenceCount <= 1 && roundEntries.length >= 1) return true;
+  if (unresolvedNamedTargets.length > 0 && nextCandidateScore >= 96 && roundEntries.length < plan.hardCap) {
+    return false;
+  }
+  if (context.hottestPairHeat >= 70 && nextCandidateScore >= 128 && roundEntries.length < plan.hardCap) {
+    return false;
+  }
   if (
     !context.debate &&
     !context.comparison &&
