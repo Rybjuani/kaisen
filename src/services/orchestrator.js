@@ -6,6 +6,28 @@ import { generateCharacterReply } from "../providers/index.js";
 import { buildAgentMessages } from "./prompting.js";
 
 const SIGNAL_GROUPS = runtime.chat.signals;
+const GENERIC_OPENERS = [
+  "buena pregunta",
+  "es una buena pregunta",
+  "yo diria que",
+  "diria que",
+  "creo que",
+  "en mi opinion",
+  "personalmente",
+  "la verdad es que",
+  "si soy sincero",
+  "honestamente",
+  "sinceramente",
+  "desde mi punto de vista",
+];
+const GENERIC_CLOSERS = [
+  "en resumen",
+  "en pocas palabras",
+  "en definitiva",
+  "eso seria todo",
+  "es una buena reflexion",
+  "es una buena pregunta",
+];
 
 const CHARACTER_REFERENCE_PATTERNS = CHARACTERS.map((character) => ({
   characterId: character.id,
@@ -60,34 +82,46 @@ function normalizeSilencedAgents(input) {
 
 function extractCharacterReferences(text) {
   const lowered = String(text || "").toLowerCase();
-  const explicitMatches = [...lowered.matchAll(/@([a-z0-9_-]+)/g)].map((match) => match[1]);
+  const explicitMatches = [...lowered.matchAll(/@([a-z0-9_-]+)/g)].map((match) => ({
+    alias: match[1],
+    index: match.index ?? 0,
+  }));
   const explicit = [];
   const natural = [];
+  const mentionPositions = new Map();
 
   for (const referenceConfig of CHARACTER_REFERENCE_PATTERNS) {
-    if (
-      referenceConfig.explicitAliases.some((alias) => explicitMatches.includes(alias))
-    ) {
+    const explicitHit = explicitMatches.find((match) => referenceConfig.explicitAliases.includes(match.alias));
+    if (explicitHit) {
       explicit.push(referenceConfig.characterId);
+      mentionPositions.set(referenceConfig.characterId, explicitHit.index);
       continue;
     }
 
-    const matchedNatural = referenceConfig.naturalAliases.some((alias) => {
-      const pattern = new RegExp(`\\b${escapeRegExp(alias).replace(/\\ /g, "\\s+")}\\b`, "i");
-      return pattern.test(text);
-    });
+    let earliestIndex = Infinity;
+    for (const alias of referenceConfig.naturalAliases) {
+      const pattern = new RegExp(`\\b${escapeRegExp(alias).replace(/\\ /g, "\\s+")}\\b`, "ig");
+      const match = pattern.exec(text);
+      if (match && typeof match.index === "number") {
+        earliestIndex = Math.min(earliestIndex, match.index);
+      }
+    }
 
-    if (matchedNatural) {
+    if (earliestIndex !== Infinity) {
       natural.push(referenceConfig.characterId);
+      mentionPositions.set(referenceConfig.characterId, earliestIndex);
     }
   }
 
   const all = [...new Set([...explicit, ...natural])];
+  const ordered = [...all].sort((left, right) => (mentionPositions.get(left) ?? 99999) - (mentionPositions.get(right) ?? 99999));
 
   return {
     explicit,
     natural: natural.filter((id) => !explicit.includes(id)),
     all,
+    ordered,
+    mentionPositions,
   };
 }
 
@@ -100,7 +134,7 @@ function countKeywordHits(text, keywords) {
   return keywords.reduce((count, keyword) => (lowered.includes(keyword) ? count + 1 : count), 0);
 }
 
-function buildSceneContext(text, references, history) {
+function buildSceneContext(text, references, history, randomness = 1) {
   const lowered = text.toLowerCase();
   const wordCount = countWords(text);
   const recentAgents = recentAgentTurns(history);
@@ -113,6 +147,9 @@ function buildSceneContext(text, references, history) {
     requestedIds: references.all,
     explicitIds: references.explicit,
     naturalIds: references.natural,
+    orderedIds: references.ordered,
+    primaryId: references.ordered[0] || null,
+    secondaryId: references.ordered[1] || null,
     directReferenceCount: references.all.length,
     solo: includesSignal(lowered, SIGNAL_GROUPS.solo),
     debate: includesSignal(lowered, SIGNAL_GROUPS.debate),
@@ -121,9 +158,12 @@ function buildSceneContext(text, references, history) {
     strategic: includesSignal(lowered, SIGNAL_GROUPS.strategic),
     chaotic: includesSignal(lowered, SIGNAL_GROUPS.chaotic),
     humorous: includesSignal(lowered, SIGNAL_GROUPS.humor),
+    silenceCallout: /callad|silencio|mudos|despierten|apagados/i.test(text),
+    comparison: references.all.length >= 2 || /ganaria|vs\b|versus|mejor|pelea/i.test(text),
     shortPing: wordCount <= 8,
     recentAgents,
     lastHistorySpeakerId: recentAgents.at(-1)?.speakerId || null,
+    randomness,
   };
 }
 
@@ -135,9 +175,12 @@ function determineRoundPlan(context, availableCount) {
 
   if (context.solo && context.directReferenceCount <= 1) {
     desiredSteps = 1;
+  } else if (context.groupAsked && context.directReferenceCount === 0) {
+    minSteps = 2;
+    desiredSteps = context.shortPing ? 2 : 3;
   } else if (context.shortPing && context.directReferenceCount <= 1) {
     desiredSteps = 1;
-  } else if (context.debate || context.groupAsked || context.directReferenceCount >= 2) {
+  } else if (context.debate || context.groupAsked || context.directReferenceCount >= 2 || context.comparison) {
     minSteps = 2;
     desiredSteps = 3;
   }
@@ -146,8 +189,13 @@ function determineRoundPlan(context, availableCount) {
     desiredSteps += 1;
   }
 
-  if (context.groupAsked && context.debate) {
+  if (context.groupAsked && (context.debate || context.humorous)) {
     desiredSteps += 1;
+  }
+
+  if (context.silenceCallout && context.directReferenceCount === 0) {
+    minSteps = Math.max(minSteps, 2);
+    desiredSteps = Math.max(desiredSteps, 2);
   }
 
   desiredSteps = Math.max(minSteps, Math.min(desiredSteps, hardCap));
@@ -156,21 +204,29 @@ function determineRoundPlan(context, availableCount) {
     minSteps,
     desiredSteps,
     hardCap: Math.max(1, Math.min(runtime.chat.maxRoundTurns, hardCap)),
-    allowReentry: context.debate || context.directReferenceCount >= 2 || context.wordCount > 22,
+    allowReentry: context.debate || context.directReferenceCount >= 2 || context.wordCount > 22 || context.comparison,
   };
+}
+
+function randomJitter(context, scale = 4) {
+  return Math.random() * scale * context.randomness;
 }
 
 function baseContextBoost(character, context) {
   let score = 0;
 
-  if (context.explicitIds.includes(character.id)) score += 150;
-  if (context.naturalIds.includes(character.id)) score += 95;
-  score += countKeywordHits(context.text, character.keywords) * 15;
+  if (context.explicitIds.includes(character.id)) score += 160;
+  if (context.naturalIds.includes(character.id)) score += 96;
+  if (context.primaryId === character.id) score += 48;
+  if (context.secondaryId === character.id) score += 18;
+
+  score += countKeywordHits(context.text, character.keywords) * 16;
 
   if (context.emotional && ["itadori", "megumi", "gojo"].includes(character.id)) score += 18;
   if (context.strategic && ["megumi", "gojo", "sukuna"].includes(character.id)) score += 18;
   if (context.chaotic && ["sukuna", "mahito", "todo"].includes(character.id)) score += 18;
-  if (context.humorous && ["gojo", "todo", "mahito"].includes(character.id)) score += 10;
+  if (context.humorous && ["gojo", "todo", "mahito"].includes(character.id)) score += 12;
+  if (context.silenceCallout && ["gojo", "todo", "mahito", "itadori"].includes(character.id)) score += 14;
 
   return score;
 }
@@ -180,19 +236,34 @@ function scoreOpeningSpeaker({ character, context, history }) {
   const recentOccurrences = recentAgents.filter((entry) => entry.speakerId === character.id).length;
   const lastSpeaker = recentAgents.at(-1)?.speakerId || null;
 
-  let score = 12 + baseContextBoost(character, context);
-  score += character.openingBias * 20;
+  let score = 14 + baseContextBoost(character, context);
+  score += character.openingBias * 22;
   score -= recentOccurrences * 30;
-  if (lastSpeaker === character.id) score -= 42;
-  if (context.solo && context.requestedIds.includes(character.id)) score += 26;
-  if (context.groupAsked && ["gojo", "itadori", "todo"].includes(character.id)) score += 8;
-  score += Math.random() * 4;
 
+  if (lastSpeaker === character.id) score -= 42;
+  if (context.solo && context.requestedIds.includes(character.id)) score += 34;
+  if (context.groupAsked && ["gojo", "itadori", "todo"].includes(character.id)) score += 10;
+  if (context.comparison && context.primaryId === character.id) score += 10;
+
+  score += randomJitter(context, 4);
   return score;
 }
 
 function extractNamedCharactersFromText(text) {
   return extractCharacterReferences(text).all;
+}
+
+function scoreRelationship(character, previousSpeakerId, namesInLastEntry) {
+  if (!previousSpeakerId || previousSpeakerId === character.id) return 0;
+
+  let score = 0;
+  if (character.dynamics.provokes.includes(previousSpeakerId)) score += 28;
+  if (character.dynamics.backsUp.includes(previousSpeakerId)) score += 16;
+  if (character.dynamics.clashesWith.includes(previousSpeakerId)) score += 22;
+  if (character.dynamics.baitedBy.includes(previousSpeakerId)) score += 18;
+  if (namesInLastEntry.includes(character.id)) score += 26;
+
+  return score;
 }
 
 function scoreFollowUpSpeaker({ character, context, roundEntries, history, plan }) {
@@ -202,20 +273,16 @@ function scoreFollowUpSpeaker({ character, context, roundEntries, history, plan 
   const firstSpeakerId = roundEntries[0]?.speakerId || null;
   const namesInLastEntry = lastEntry ? extractNamedCharactersFromText(lastEntry.text) : [];
 
-  let score = 10 + baseContextBoost(character, context);
+  let score = 12 + baseContextBoost(character, context);
   score += character.followUpBias * 18;
+  score += scoreRelationship(character, previousSpeakerId, namesInLastEntry);
 
-  if (roundOccurrences === 0) score += 16;
-  if (context.requestedIds.includes(character.id) && roundOccurrences === 0) score += 32;
-  if (previousSpeakerId && previousSpeakerId !== character.id) {
-    if (character.dynamics.provokes.includes(previousSpeakerId)) score += 26;
-    if (character.dynamics.backsUp.includes(previousSpeakerId)) score += 16;
-    if (namesInLastEntry.includes(character.id)) score += 18;
-  }
-
+  if (roundOccurrences === 0) score += 14;
+  if (context.requestedIds.includes(character.id) && roundOccurrences === 0) score += 34;
   if (plan.allowReentry && roundOccurrences === 1 && character.id === firstSpeakerId && roundEntries.length >= 2) {
-    score += character.reentryBias * 24;
+    score += character.reentryBias * 22;
   }
+  if (context.comparison && context.secondaryId === character.id && roundOccurrences === 0) score += 16;
 
   if (roundOccurrences >= runtime.chat.naturalRound.maxSpeakerEntriesPerRound) {
     score -= 120;
@@ -223,18 +290,20 @@ function scoreFollowUpSpeaker({ character, context, roundEntries, history, plan 
     score -= roundOccurrences * 24;
   }
 
-  if (previousSpeakerId === character.id) score -= 200;
+  if (previousSpeakerId === character.id) score -= 220;
   if (context.lastHistorySpeakerId === character.id) score -= 18;
 
-  score += Math.random() * 4;
+  score += randomJitter(context, 4);
   return score;
 }
 
 function scoreClosingSpeaker({ character, context, roundEntries, history, plan }) {
   let score = scoreFollowUpSpeaker({ character, context, roundEntries, history, plan });
-  score += character.closerBias * 24;
+  score += character.closerBias * 22;
 
-  if (["itadori", "megumi", "gojo"].includes(character.id)) score += 12;
+  const previousSpeakerId = roundEntries.at(-1)?.speakerId || null;
+  if (previousSpeakerId && character.dynamics.closesBestAgainst.includes(previousSpeakerId)) score += 18;
+  if (["itadori", "megumi", "gojo"].includes(character.id)) score += 8;
   if (context.debate && ["gojo", "sukuna", "mahito"].includes(character.id)) score += 8;
 
   return score;
@@ -255,7 +324,7 @@ function chooseSpeaker({ availableCharacters, blockedIds, scorer }) {
 function determinePurpose({ roundEntries, context, plan }) {
   if (roundEntries.length === 0) return "open";
   if (roundEntries.length + 1 >= plan.desiredSteps) return "close";
-  if (context.debate || context.directReferenceCount >= 2) return "react";
+  if (context.debate || context.directReferenceCount >= 2 || context.comparison) return "react";
   if (roundEntries.length === 1 && !context.solo && (context.groupAsked || context.wordCount > 18)) return "react";
   return "close";
 }
@@ -293,6 +362,13 @@ function pickNextSpeaker({ availableCharacters, blockedIds, context, history, ro
   };
 }
 
+function splitIntoSentences(text) {
+  return String(text || "")
+    .split(/(?<=[.!?])\s+|\n+/)
+    .map((sentence) => sentence.trim())
+    .filter(Boolean);
+}
+
 function trimToWordLimit(text, maxWords) {
   const words = text.split(/\s+/).filter(Boolean);
   if (words.length <= maxWords) return text.trim();
@@ -302,14 +378,56 @@ function trimToWordLimit(text, maxWords) {
   return (sentenceCut?.[1] || trimmed).trim();
 }
 
+function stripConfiguredLeadIn(text, patterns = []) {
+  let current = text.trim();
+
+  for (const phrase of [...GENERIC_OPENERS, ...patterns]) {
+    const expression = new RegExp(`^${escapeRegExp(phrase)}[,:.!\\s-]*`, "i");
+    current = current.replace(expression, "").trim();
+  }
+
+  return current;
+}
+
+function isWeakClosingSentence(sentence, patterns = []) {
+  const lowered = sentence.toLowerCase();
+  return [...GENERIC_CLOSERS, ...patterns].some((phrase) => lowered.startsWith(phrase));
+}
+
+function tightenSentences(sentences, character) {
+  let current = [...sentences];
+
+  while (current.length > 1 && isWeakClosingSentence(current.at(-1), character.stripClosers)) {
+    current.pop();
+  }
+
+  if (current.length > character.maxSentences) {
+    if (character.maxSentences === 2 && current.length >= 3) {
+      current = [current[0], current.at(-1)];
+    } else {
+      current = current.slice(0, character.maxSentences);
+    }
+  }
+
+  return current;
+}
+
 function cleanAgentText(text, character) {
   let normalized = String(text || "")
     .replace(/\r\n/g, "\n")
     .replace(new RegExp(`^${character.name}\\s*[:,-]\\s*`, "i"), "")
+    .replace(/^["'`]+|["'`]+$/g, "")
+    .replace(/^\s*[-*•]\s+/gm, "")
+    .replace(/^\s*\d+\.\s+/gm, "")
     .replace(/[ \t]+\n/g, "\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 
+  normalized = stripConfiguredLeadIn(normalized, character.stripLeadIns);
+
+  let sentences = splitIntoSentences(normalized);
+  sentences = tightenSentences(sentences, character);
+  normalized = sentences.join(" ").trim();
   normalized = trimToWordLimit(normalized, character.maxWords);
 
   return normalized;
@@ -318,12 +436,12 @@ function cleanAgentText(text, character) {
 function buildTiming({ character, text, index, purpose }) {
   const range = index === 0 ? runtime.chat.initialDelayMs : runtime.chat.betweenDelayMs;
   const baseTotal = Math.round(range.min + Math.random() * (range.max - range.min));
-  const purposeAdjustment = purpose === "react" ? -220 : purpose === "close" ? 80 : 0;
+  const purposeAdjustment = purpose === "react" ? -240 : purpose === "close" ? -80 : 0;
   const adjustedTotal = Math.round((baseTotal + purposeAdjustment) * character.delayBias);
-  const cappedTotal = Math.max(range.min, Math.min(adjustedTotal, range.max + 400));
-  const typingBase = 760 + Math.min(text.length, 200) * 8;
-  const typingMs = Math.max(700, Math.min(Math.round(cappedTotal * 0.58), typingBase));
-  const thinkingMs = Math.max(520, cappedTotal - typingMs);
+  const cappedTotal = Math.max(range.min, Math.min(adjustedTotal, range.max + 260));
+  const typingBase = 640 + Math.min(text.length, 160) * 7;
+  const typingMs = Math.max(560, Math.min(Math.round(cappedTotal * 0.56), typingBase));
+  const thinkingMs = Math.max(460, cappedTotal - typingMs);
 
   return {
     thinkingMs,
@@ -344,11 +462,98 @@ function shouldStopRound({ context, plan, roundEntries, nextCandidateScore, fail
 
   if (context.solo && roundEntries.length >= 1) return true;
   if (context.shortPing && context.directReferenceCount <= 1 && roundEntries.length >= 1) return true;
-  if (!context.debate && coveredReferences && roundEntries.length >= 2 && nextCandidateScore < 75) return true;
-  if (coveredReferences && roundEntries.length >= 3 && nextCandidateScore < 92) return true;
-  if (!coveredReferences && roundEntries.length >= plan.desiredSteps - 1 && nextCandidateScore < 108) return true;
+  if (!context.debate && !context.comparison && coveredReferences && roundEntries.length >= 2 && nextCandidateScore < 88) {
+    return true;
+  }
+  if (coveredReferences && roundEntries.length >= 3 && nextCandidateScore < 100) return true;
+  if (!coveredReferences && roundEntries.length >= plan.desiredSteps - 1 && nextCandidateScore < 112) return true;
 
   return false;
+}
+
+function buildPreviewEntry(characterId, replyToAgentId) {
+  const character = getCharacter(characterId);
+  const replyTarget = replyToAgentId ? getCharacter(replyToAgentId) : null;
+
+  if (!character) {
+    return "Mesa.";
+  }
+
+  if (replyTarget) {
+    return `${character.name} corta a ${replyTarget.name}.`;
+  }
+
+  return `${character.name} entra primero.`;
+}
+
+function planRound({ text, history, silencedAgents, randomize = true }) {
+  const references = extractCharacterReferences(text);
+  const context = buildSceneContext(text, references, history, randomize ? 1 : 0);
+  const silenced = new Set(silencedAgents);
+  const availableCharacters = CHARACTERS.filter((character) => !silenced.has(character.id));
+
+  if (!availableCharacters.length) {
+    throw createRequestError("Todos los personajes estan silenciados. Activa al menos uno.", 400);
+  }
+
+  const plan = determineRoundPlan(context, availableCharacters.length);
+  const roundEntries = [];
+  const previewSteps = [];
+  const blockedIds = new Set();
+
+  while (previewSteps.length < plan.hardCap) {
+    const candidate = pickNextSpeaker({
+      availableCharacters,
+      blockedIds,
+      context,
+      history,
+      roundEntries,
+      plan,
+    });
+
+    if (!candidate) break;
+
+    previewSteps.push({
+      agentId: candidate.character.id,
+      purpose: candidate.purpose,
+      replyToAgentId: candidate.replyToAgentId,
+      score: Math.round(candidate.score),
+    });
+
+    roundEntries.push({
+      role: "agent",
+      speakerId: candidate.character.id,
+      text: buildPreviewEntry(candidate.character.id, candidate.replyToAgentId),
+    });
+
+    const previewCandidate = pickNextSpeaker({
+      availableCharacters,
+      blockedIds,
+      context,
+      history,
+      roundEntries,
+      plan,
+    });
+
+    if (
+      shouldStopRound({
+        context,
+        plan,
+        roundEntries,
+        nextCandidateScore: previewCandidate?.score || 0,
+        failures: 0,
+      })
+    ) {
+      break;
+    }
+  }
+
+  return {
+    references,
+    context,
+    plan,
+    previewSteps,
+  };
 }
 
 export function sanitizeChatRequest(body) {
@@ -368,36 +573,24 @@ export function sanitizeChatRequest(body) {
   };
 }
 
+export function previewRoundPlan(request) {
+  const payload = sanitizeChatRequest(request);
+  return planRound({ ...payload, randomize: false });
+}
+
 export async function createRoundtableConversation({ text, history, silencedAgents }) {
-  const references = extractCharacterReferences(text);
-  const context = buildSceneContext(text, references, history);
-  const silenced = new Set(silencedAgents);
-  const availableCharacters = CHARACTERS.filter((character) => !silenced.has(character.id));
-
-  if (!availableCharacters.length) {
-    throw createRequestError("Todos los personajes estan silenciados. Activa al menos uno.", 400);
-  }
-
-  const plan = determineRoundPlan(context, availableCharacters.length);
+  const planned = planRound({ text, history, silencedAgents, randomize: true });
   const roundId = crypto.randomUUID();
-  const roundEntries = [];
   const steps = [];
+  const roundEntries = [];
   const blockedIds = new Set();
   let failures = 0;
 
-  while (steps.length < plan.hardCap) {
-    const candidate = pickNextSpeaker({
-      availableCharacters,
-      blockedIds,
-      context,
-      history,
-      roundEntries,
-      plan,
-    });
-
-    if (!candidate) break;
-
-    const character = candidate.character;
+  for (const stepPreview of planned.previewSteps) {
+    const character = getCharacter(stepPreview.agentId);
+    if (!character || blockedIds.has(character.id)) {
+      continue;
+    }
 
     try {
       const messages = buildAgentMessages({
@@ -405,12 +598,12 @@ export async function createRoundtableConversation({ text, history, silencedAgen
         history,
         roundEntries,
         userText: text,
-        references: context.requestedIds,
+        references: planned.context.requestedIds,
         turnIndex: steps.length,
-        purpose: candidate.purpose,
-        replyToAgentId: candidate.replyToAgentId,
+        purpose: stepPreview.purpose,
+        replyToAgentId: stepPreview.replyToAgentId,
         alreadySpoke: roundEntries.some((entry) => entry.speakerId === character.id),
-        roundPlan: plan,
+        roundPlan: planned.plan,
       });
 
       const response = await generateCharacterReply({
@@ -425,50 +618,28 @@ export async function createRoundtableConversation({ text, history, silencedAgen
         continue;
       }
 
-      const step = {
+      steps.push({
         id: crypto.randomUUID(),
         agentId: character.id,
         text: cleanedText,
         provider: response.provider,
         model: response.model,
-        purpose: candidate.purpose,
-        replyToAgentId: candidate.replyToAgentId,
+        purpose: stepPreview.purpose,
+        replyToAgentId: stepPreview.replyToAgentId,
         timing: buildTiming({
           character,
           text: cleanedText,
           index: steps.length,
-          purpose: candidate.purpose,
+          purpose: stepPreview.purpose,
         }),
         fallbackTrace: response.trace,
-      };
+      });
 
-      steps.push(step);
       roundEntries.push({
         role: "agent",
         speakerId: character.id,
         text: cleanedText,
       });
-
-      const previewCandidate = pickNextSpeaker({
-        availableCharacters,
-        blockedIds,
-        context,
-        history,
-        roundEntries,
-        plan,
-      });
-
-      if (
-        shouldStopRound({
-          context,
-          plan,
-          roundEntries,
-          nextCandidateScore: previewCandidate?.score || 0,
-          failures,
-        })
-      ) {
-        break;
-      }
     } catch (error) {
       blockedIds.add(character.id);
       failures += 1;
@@ -477,7 +648,7 @@ export async function createRoundtableConversation({ text, history, silencedAgen
         break;
       }
 
-      if (steps.length === 0 && blockedIds.size >= availableCharacters.length) {
+      if (steps.length === 0 && blockedIds.size >= planned.previewSteps.length) {
         throw error;
       }
     }
@@ -493,7 +664,7 @@ export async function createRoundtableConversation({ text, history, silencedAgen
     roundId,
     selectedAgentIds: [...new Set(steps.map((step) => step.agentId))],
     queueAgentIds: steps.map((step) => step.agentId),
-    references,
+    references: planned.references,
     steps,
   };
 }

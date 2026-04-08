@@ -461,7 +461,7 @@ function bootstrap() {
   appendMessage({
     id: crypto.randomUUID(),
     role: "system",
-    text: "La mesa ya estaba hablando. Entra cuando quieras; nombrar a Gojo, Sukuna, Itadori, Megumi, Todo o Mahito funciona con o sin @.",
+    text: "La mesa ya estaba ahi. Entra cuando quieras; nombrarlos basta.",
   });
 }
 

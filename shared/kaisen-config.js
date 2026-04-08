@@ -4,15 +4,15 @@ export const APP_META = {
   title: "Kaisen | Chat grupal maldito",
   description:
     "Chat grupal multiagente con Sukuna, Gojo, Itadori, Megumi, Todo y Mahito.",
-  tagline: "Entra cuando quieras. La mesa ya existe.",
+  tagline: "Seis voces. Entra cuando quieras.",
   promptPlaceholder:
-    "Escribe como si entraras a un grupo. Ej: Gojo, Sukuna, dejen de pelear y díganme qué harían.",
+    "Entra al cruce. Nombralos si quieres mover la mesa.",
 };
 
 export const STATUS_COPY = {
-  active: "En mesa",
-  waiting: "Espera",
-  thinking: "Piensa",
+  active: "Listo",
+  waiting: "Fila",
+  thinking: "Escribe",
   silenced: "Off",
 };
 

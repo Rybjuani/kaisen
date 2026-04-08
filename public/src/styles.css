@@ -61,10 +61,10 @@ textarea {
 }
 
 .app-shell {
-  max-width: 960px;
+  max-width: 920px;
   height: 100dvh;
   margin: 0 auto;
-  padding: 16px;
+  padding: 10px;
 }
 
 .panel {
@@ -76,11 +76,11 @@ textarea {
 
 .chat-shell {
   height: 100%;
-  border-radius: 26px;
-  padding: 14px;
+  border-radius: 22px;
+  padding: 10px;
   display: grid;
   grid-template-rows: auto auto 1fr auto auto;
-  gap: 12px;
+  gap: 8px;
   overflow: hidden;
 }
 
@@ -88,7 +88,7 @@ textarea {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: 10px;
   min-width: 0;
 }
 
@@ -96,14 +96,14 @@ textarea {
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
 }
 
 .brand-mark {
-  width: 42px;
-  height: 42px;
+  width: 36px;
+  height: 36px;
   flex: none;
-  border-radius: 14px;
+  border-radius: 12px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   background:
     radial-gradient(circle at 35% 35%, rgba(255, 255, 255, 0.28), transparent 34%),
@@ -118,11 +118,11 @@ textarea {
 }
 
 .eyebrow {
-  margin: 0 0 4px;
+  margin: 0 0 2px;
   color: var(--muted-2);
-  font-size: 0.72rem;
+  font-size: 0.65rem;
   text-transform: uppercase;
-  letter-spacing: 0.16em;
+  letter-spacing: 0.18em;
 }
 
 h1,
@@ -136,32 +136,32 @@ h1,
 
 h1 {
   margin: 0;
-  font-size: 1.08rem;
+  font-size: 1rem;
 }
 
 .brand-copy p:last-child {
-  margin: 2px 0 0;
+  margin: 1px 0 0;
   color: var(--muted);
-  font-size: 0.9rem;
+  font-size: 0.8rem;
 }
 
 .topbar-actions {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
 }
 
 .status-chip {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 34px;
-  padding: 0 12px;
+  min-height: 30px;
+  padding: 0 10px;
   border-radius: 999px;
   border: 1px solid rgba(146, 243, 208, 0.2);
   background: rgba(13, 54, 47, 0.34);
   color: var(--success);
-  font-size: 0.76rem;
+  font-size: 0.72rem;
   letter-spacing: 0.03em;
   white-space: nowrap;
 }
@@ -190,16 +190,16 @@ h1 {
 }
 
 .ghost-button {
-  min-height: 40px;
-  padding: 0 12px;
+  min-height: 34px;
+  padding: 0 11px;
   background: rgba(255, 255, 255, 0.04);
   color: var(--text);
   border-color: var(--line);
 }
 
 .primary-button {
-  min-height: 44px;
-  padding: 0 16px;
+  min-height: 38px;
+  padding: 0 14px;
   background: linear-gradient(135deg, rgba(177, 38, 69, 0.94), rgba(82, 199, 255, 0.9));
   color: #fff;
   box-shadow: 0 10px 26px rgba(82, 199, 255, 0.12);
@@ -213,20 +213,20 @@ h1 {
 
 .roster-strip {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   overflow-x: auto;
   overflow-y: hidden;
-  padding-bottom: 2px;
+  padding-bottom: 1px;
 }
 
 .roster-chip {
-  min-width: 118px;
+  min-width: 102px;
   flex: 0 0 auto;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 10px;
-  border-radius: 18px;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 16px;
   border: 1px solid var(--line);
   background:
     linear-gradient(140deg, rgba(255, 255, 255, 0.028), transparent 48%),
@@ -253,19 +253,20 @@ h1 {
 .roster-chip-copy {
   min-width: 0;
   display: grid;
-  gap: 2px;
+  gap: 1px;
 }
 
 .roster-chip-copy strong {
-  font-size: 0.82rem;
+  font-size: 0.78rem;
 }
 
 .roster-chip-status {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   color: var(--muted);
-  font-size: 0.72rem;
+  font-size: 0.67rem;
+  line-height: 1;
 }
 
 .roster-chip-status::before {
@@ -323,29 +324,29 @@ h1 {
 }
 
 .avatar--roster {
-  width: 38px;
-  height: 38px;
+  width: 32px;
+  height: 32px;
 }
 
 .avatar--message,
 .avatar--typing {
-  width: 42px;
-  height: 42px;
+  width: 38px;
+  height: 38px;
 }
 
 .conversation {
   min-height: 0;
   overflow: auto;
   display: grid;
-  gap: 10px;
+  gap: 8px;
   align-content: start;
-  padding: 4px 2px 2px;
+  padding: 2px 1px 1px;
 }
 
 .message {
   display: flex;
   align-items: flex-start;
-  gap: 10px;
+  gap: 8px;
 }
 
 .message--user {
@@ -354,9 +355,9 @@ h1 {
 
 .message-card {
   position: relative;
-  max-width: min(760px, 90%);
-  padding: 11px 13px;
-  border-radius: 18px;
+  max-width: min(720px, 91%);
+  padding: 9px 11px;
+  border-radius: 16px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   background:
     linear-gradient(140deg, rgba(255, 255, 255, 0.026), transparent 42%),
@@ -385,28 +386,29 @@ h1 {
 .message-meta {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 6px;
+  gap: 6px;
+  margin-bottom: 4px;
 }
 
 .message-name {
-  font-size: 0.88rem;
+  font-size: 0.84rem;
 }
 
 .message-reply {
   display: inline-flex;
   align-items: center;
-  min-height: 22px;
-  padding: 0 8px;
+  min-height: 18px;
+  padding: 0 6px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.05);
   color: var(--muted);
-  font-size: 0.72rem;
+  font-size: 0.67rem;
 }
 
 .message-body {
   color: var(--text);
-  line-height: 1.56;
+  font-size: 0.95rem;
+  line-height: 1.44;
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -418,33 +420,33 @@ h1 {
 .typing-entry {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
-  padding: 2px 2px 0;
+  gap: 8px;
+  padding: 1px 1px 0;
 }
 
 .typing-copy {
   display: grid;
-  gap: 2px;
+  gap: 1px;
 }
 
 .typing-copy strong {
   font-family: "Sora", sans-serif;
-  font-size: 0.84rem;
+  font-size: 0.8rem;
 }
 
 .typing-copy span {
   color: var(--muted);
-  font-size: 0.78rem;
+  font-size: 0.73rem;
 }
 
 .typing-dots {
   display: inline-flex;
-  gap: 5px;
+  gap: 4px;
 }
 
 .typing-dots i {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
   border-radius: 50%;
   background: var(--agent-accent, #fff);
   animation: pulse 1.2s ease-in-out infinite;
@@ -473,22 +475,23 @@ h1 {
 }
 
 .composer {
-  border-radius: 22px;
+  border-radius: 18px;
   border: 1px solid var(--line-strong);
   background: var(--panel-strong);
-  padding: 12px;
+  padding: 10px;
 }
 
 #composer-input {
   width: 100%;
-  min-height: 40px;
+  min-height: 34px;
   max-height: 180px;
   resize: none;
   border: 0;
   outline: 0;
   background: transparent;
   color: var(--text);
-  line-height: 1.5;
+  font-size: 0.96rem;
+  line-height: 1.42;
 }
 
 #composer-input::placeholder {
@@ -496,18 +499,18 @@ h1 {
 }
 
 .composer-footer {
-  margin-top: 10px;
+  margin-top: 8px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 10px;
 }
 
 .composer-hint {
   margin: 0;
   color: var(--muted);
-  font-size: 0.84rem;
-  line-height: 1.4;
+  font-size: 0.76rem;
+  line-height: 1.32;
 }
 
 .composer-hint span {
@@ -541,22 +544,31 @@ h1 {
 
 @media (max-width: 720px) {
   .app-shell {
-    padding: 10px;
+    padding: 8px;
   }
 
   .chat-shell {
-    border-radius: 20px;
-    padding: 12px;
+    border-radius: 18px;
+    padding: 8px;
   }
 
   .chat-topbar,
   .composer-footer {
     display: grid;
-    gap: 10px;
+    gap: 8px;
   }
 
   .topbar-actions {
     justify-content: flex-start;
+  }
+
+  .brand-copy p:last-child {
+    font-size: 0.75rem;
+  }
+
+  .roster-chip {
+    min-width: 94px;
+    padding: 6px 7px;
   }
 
   .message-card,
@@ -565,6 +577,6 @@ h1 {
   }
 
   .composer-hint {
-    font-size: 0.8rem;
+    font-size: 0.72rem;
   }
 }
