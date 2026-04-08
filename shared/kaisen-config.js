@@ -1,37 +1,31 @@
 export const APP_META = {
   name: "Kaisen",
   shortName: "Kaisen",
-  title: "Kaisen | Mesa redonda multiagente",
+  title: "Kaisen | Chat grupal maldito",
   description:
     "Chat grupal multiagente con Sukuna, Gojo, Itadori, Megumi, Todo y Mahito.",
-  tagline: "Una mesa redonda viva, oscura y controlada.",
+  tagline: "Entra cuando quieras. La mesa ya existe.",
   promptPlaceholder:
-    "Escribe para la mesa. Ej: @gojo y @megumi comparen dos planes para enfrentar este problema.",
+    "Escribe como si entraras a un grupo. Ej: Gojo, Sukuna, dejen de pelear y díganme qué harían.",
 };
 
 export const STATUS_COPY = {
-  active: "Activo",
-  waiting: "Esperando",
-  thinking: "Pensando",
-  silenced: "Silenciado",
+  active: "En mesa",
+  waiting: "Espera",
+  thinking: "Piensa",
+  silenced: "Off",
 };
 
-export const CHARACTER_ORDER = [
-  "sukuna",
-  "gojo",
-  "itadori",
-  "megumi",
-  "todo",
-  "mahito",
-];
+export const CHARACTER_ORDER = ["sukuna", "gojo", "itadori", "megumi", "todo", "mahito"];
 
 export const CHARACTER_ROSTER = {
   sukuna: {
     id: "sukuna",
     name: "Sukuna",
     handle: "@sukuna",
+    aliases: ["sukuna", "ryomen", "ryomen sukuna", "rey de las maldiciones"],
     title: "Rey de las Maldiciones",
-    summary: "Soberbio, brutal y afilado.",
+    summary: "Dominante, cruel y afilado.",
     accent: "#b12645",
     accentSoft: "rgba(177, 38, 69, 0.16)",
     accentGlow: "rgba(177, 38, 69, 0.32)",
@@ -44,8 +38,9 @@ export const CHARACTER_ROSTER = {
     id: "gojo",
     name: "Gojo",
     handle: "@gojo",
+    aliases: ["gojo", "satoru", "satoru gojo"],
     title: "El mas fuerte",
-    summary: "Brillante, ludico y descarado.",
+    summary: "Brillante, ironico y seguro.",
     accent: "#52c7ff",
     accentSoft: "rgba(82, 199, 255, 0.16)",
     accentGlow: "rgba(82, 199, 255, 0.32)",
@@ -58,8 +53,9 @@ export const CHARACTER_ROSTER = {
     id: "itadori",
     name: "Itadori",
     handle: "@itadori",
-    title: "Corazon del equipo",
-    summary: "Empatico, directo y humano.",
+    aliases: ["itadori", "yuji", "yuji itadori"],
+    title: "Corazon del grupo",
+    summary: "Humano, noble y directo.",
     accent: "#f47a3f",
     accentSoft: "rgba(244, 122, 63, 0.16)",
     accentGlow: "rgba(244, 122, 63, 0.32)",
@@ -72,8 +68,9 @@ export const CHARACTER_ROSTER = {
     id: "megumi",
     name: "Megumi",
     handle: "@megumi",
+    aliases: ["megumi", "fushiguro", "megumi fushiguro"],
     title: "Estratega sobrio",
-    summary: "Frio, racional y preciso.",
+    summary: "Preciso, serio y tactico.",
     accent: "#6d8eff",
     accentSoft: "rgba(109, 142, 255, 0.16)",
     accentGlow: "rgba(109, 142, 255, 0.3)",
@@ -86,8 +83,9 @@ export const CHARACTER_ROSTER = {
     id: "todo",
     name: "Todo",
     handle: "@todo",
+    aliases: ["todo", "aoi", "aoi todo"],
     title: "Caos con conviccion",
-    summary: "Intenso, frontal y teatral.",
+    summary: "Explosivo, frontal y teatral.",
     accent: "#c9b04f",
     accentSoft: "rgba(201, 176, 79, 0.16)",
     accentGlow: "rgba(201, 176, 79, 0.3)",
@@ -100,8 +98,9 @@ export const CHARACTER_ROSTER = {
     id: "mahito",
     name: "Mahito",
     handle: "@mahito",
+    aliases: ["mahito"],
     title: "Filosofo deforme",
-    summary: "Inquietante, jugueton y manipulador.",
+    summary: "Extraño, perverso y jugueton.",
     accent: "#84d0d6",
     accentSoft: "rgba(132, 208, 214, 0.16)",
     accentGlow: "rgba(132, 208, 214, 0.28)",

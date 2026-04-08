@@ -54,10 +54,26 @@ export const runtime = {
     maxRoundTurns: Math.min(toInteger(process.env.CHAT_MAX_ROUND_TURNS, 6, 1), 6),
     requestTimeoutMs: toInteger(process.env.CHAT_REQUEST_TIMEOUT_MS, 45000, 5000),
     enableStream: toBoolean(process.env.CHAT_ENABLE_STREAM, true),
-    historyWindow: 18,
+    historyWindow: 20,
     retryCount: 2,
-    initialDelayMs: { min: 2500, max: 5500 },
-    betweenDelayMs: { min: 1800, max: 4500 },
+    initialDelayMs: { min: 2000, max: 5000 },
+    betweenDelayMs: { min: 1500, max: 4000 },
+    naturalRound: {
+      minMessages: 1,
+      softMaxMessages: 4,
+      maxSpeakerEntriesPerRound: 2,
+      maxProviderFailuresPerRound: 2,
+      minCrossTalkMessages: 2,
+    },
+    signals: {
+      solo: ["solo", "solamente", "unicamente", "only", "nada mas", "solo quiero"],
+      debate: ["compar", "debate", "discuta", "discutan", "versus", "vs", "ranking", "opinen", "contrasten"],
+      group: ["ustedes", "todos", "los seis", "los 6", "grupo", "mesa", "equipo", "todos ustedes"],
+      emotional: ["siento", "miedo", "culpa", "dolor", "triste", "ansiedad", "amigo", "persona", "corazon"],
+      strategic: ["plan", "estrategia", "riesgo", "decision", "resolver", "prioridad", "analisis", "opcion"],
+      chaotic: ["caos", "destruir", "dominio", "maldicion", "alma", "poder", "pelea", "violencia"],
+      humor: ["broma", "gracia", "ridiculo", "absurdo", "drama"],
+    },
   },
 };
 
@@ -88,6 +104,7 @@ export function getPublicRuntimeConfig() {
       maxRoundTurns: runtime.chat.maxRoundTurns,
       requestTimeoutMs: runtime.chat.requestTimeoutMs,
       enableStream: runtime.chat.enableStream,
+      softMaxMessages: runtime.chat.naturalRound.softMaxMessages,
     },
   };
 }

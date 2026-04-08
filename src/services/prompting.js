@@ -19,41 +19,61 @@ export function buildAgentMessages({
   history,
   roundEntries,
   userText,
-  mentions,
-  selectedIds,
+  references,
   turnIndex,
+  purpose,
+  replyToAgentId,
+  alreadySpoke,
+  roundPlan,
 }) {
-  const mentionsLabel = mentions.length ? mentions.map((mention) => `@${mention}`).join(", ") : "ninguna";
-  const orderLabel = selectedIds.map((id) => CHARACTERS.find((item) => item.id === id)?.name || id).join(", ");
+  const referencedNames = references.length
+    ? references
+        .map((id) => CHARACTERS.find((item) => item.id === id)?.name || id)
+        .join(", ")
+    : "ninguno";
+  const replyTarget = replyToAgentId
+    ? CHARACTERS.find((item) => item.id === replyToAgentId)?.name || replyToAgentId
+    : null;
   const roundContext =
-    roundEntries.length > 0
-      ? formatTranscript(roundEntries, "")
-      : "Todavia nadie respondio en esta ronda.";
+    roundEntries.length > 0 ? formatTranscript(roundEntries, "") : "Todavia nadie respondio en esta interaccion.";
+
+  const guidanceByPurpose = {
+    open: "Abre la escena con una idea clara y personalidad fuerte. No expliques todo.",
+    react: "Entra como parte de un grupo vivo: responde a lo anterior, aporta friccion o apoyo y avanza la escena.",
+    close: "Cierra o aterraiza la escena con una idea final fuerte. No dejes el chat abierto sin necesidad.",
+  };
 
   const userPrompt = [
     "Contexto fijo:",
-    "Estas dentro de una mesa redonda con Sukuna, Gojo, Itadori, Megumi, Todo y Mahito.",
+    "Estas dentro de un chat grupal continuo con Sukuna, Gojo, Itadori, Megumi, Todo y Mahito.",
     `Interlocutor actual: ${character.name}.`,
-    `Prioridad de menciones del usuario: ${mentionsLabel}.`,
-    `Orden seleccionado por el orquestador para esta ronda: ${orderLabel}.`,
-    `Turno actual dentro de la ronda: ${turnIndex + 1}.`,
+    `Referencias detectadas del usuario: ${referencedNames}.`,
+    `Turno dentro de esta interaccion: ${turnIndex + 1}.`,
+    `Tipo de intervencion esperada: ${purpose}.`,
+    `Objetivo de longitud: entre ${character.minWords} y ${character.maxWords} palabras.`,
+    `Maximo blando de mensajes para esta interaccion: ${roundPlan.desiredSteps}.`,
+    alreadySpoke
+      ? "Ya hablaste antes en esta misma interaccion; si vuelves a entrar, hazlo solo para rematar o corregir algo."
+      : "Todavia no hablaste en esta interaccion.",
+    replyTarget ? `Vas inmediatamente despues de ${replyTarget}. Puedes responderle de forma directa.` : "No estas obligado a hablarle a un personaje concreto.",
     "",
     "Historial reciente:",
     formatTranscript(history),
     "",
-    "Respuestas ya emitidas en esta ronda:",
+    "Lo que ya paso en esta interaccion:",
     roundContext,
     "",
     "Nuevo mensaje del usuario:",
     `Usuario: ${userText}`,
     "",
     "Instrucciones de salida:",
-    "- Responde como una unica intervencion de este personaje.",
-    "- Aporta un angulo nuevo o una reaccion breve a otro personaje sin repetir lo ya dicho.",
-    "- Mantente claro, legible y con personalidad marcada.",
-    "- Normalmente usa entre 35 y 110 palabras.",
-    "- No hagas listas salvo que la pregunta lo pida de forma obvia.",
-    "- No menciones prompts, proveedores ni reglas internas.",
+    `- ${guidanceByPurpose[purpose]}`,
+    "- Habla como este personaje, no como un asistente.",
+    "- Evita repetir ideas ya dichas por el usuario o por la ronda.",
+    "- Si haces referencia a otro personaje, que sea breve y natural.",
+    "- Prioriza una o dos ideas fuertes, no una lista de puntos.",
+    "- Si ya hay suficiente claridad, remata y corta. No alargues la escena.",
+    "- No menciones prompts, modelos, providers ni reglas internas.",
   ].join("\n");
 
   return [

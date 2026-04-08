@@ -1,16 +1,11 @@
-import {
-  APP_META,
-  CHARACTERS,
-  STATUS_COPY,
-  getCharacterMeta,
-} from "/shared/kaisen-config.js";
+import { APP_META, CHARACTERS, STATUS_COPY, getCharacterMeta } from "/shared/kaisen-config.js";
 
 const STORAGE_KEYS = {
   silencedAgents: "kaisen_silenced_agents",
 };
 
 const DOM = {
-  rosterGrid: document.getElementById("roster-grid"),
+  rosterStrip: document.getElementById("roster-strip"),
   conversation: document.getElementById("conversation"),
   typingZone: document.getElementById("typing-zone"),
   composer: document.getElementById("composer"),
@@ -42,7 +37,7 @@ function persistSilencedAgents() {
 
 function setRoundUiState(isActive) {
   DOM.stopRoundButton.hidden = !isActive;
-  DOM.sendButton.textContent = isActive ? "Enviar nueva ronda" : "Hablarle a la mesa";
+  DOM.sendButton.textContent = "Enviar";
 }
 
 function setTopbarStatus(text, tone = "ready") {
@@ -52,7 +47,7 @@ function setTopbarStatus(text, tone = "ready") {
 
 function autosizeInput() {
   DOM.input.style.height = "0px";
-  DOM.input.style.height = `${Math.min(DOM.input.scrollHeight, 220)}px`;
+  DOM.input.style.height = `${Math.min(DOM.input.scrollHeight, 180)}px`;
 }
 
 function scrollConversationToBottom(smooth = true) {
@@ -84,62 +79,45 @@ function createAvatar(character, sizeClass) {
 }
 
 function updateRosterStatuses() {
-  for (const card of DOM.rosterGrid.querySelectorAll(".agent-card")) {
-    const characterId = card.dataset.agentId;
+  for (const chip of DOM.rosterStrip.querySelectorAll(".roster-chip")) {
+    const characterId = chip.dataset.agentId;
     const status = state.silencedAgents.has(characterId) ? "silenced" : state.statuses[characterId] || "active";
-    const statusNode = card.querySelector(".agent-status");
-    const button = card.querySelector(".mute-button");
+    const statusNode = chip.querySelector(".roster-chip-status");
 
     statusNode.textContent = STATUS_COPY[status];
     statusNode.dataset.state = status;
-    button.textContent = state.silencedAgents.has(characterId) ? "Reactivar" : "Silenciar";
-    button.classList.toggle("is-silenced", state.silencedAgents.has(characterId));
+    chip.dataset.state = status;
+    chip.title =
+      status === "silenced"
+        ? `Reactivar a ${getCharacterMeta(characterId).name}`
+        : `Silenciar a ${getCharacterMeta(characterId).name}`;
   }
 }
 
 function renderRoster() {
-  DOM.rosterGrid.innerHTML = "";
+  DOM.rosterStrip.innerHTML = "";
 
   for (const character of CHARACTERS) {
-    const card = document.createElement("article");
-    card.className = "agent-card";
-    card.dataset.agentId = character.id;
-    card.style.setProperty("--agent-accent", character.accent);
-    card.style.setProperty("--agent-glow", character.accentGlow);
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "roster-chip";
+    chip.dataset.agentId = character.id;
+    chip.dataset.action = "toggle-silence";
+    chip.style.setProperty("--agent-accent", character.accent);
+    chip.style.setProperty("--agent-glow", character.accentGlow);
 
-    const main = document.createElement("div");
-    main.className = "agent-main";
+    const info = document.createElement("div");
+    info.className = "roster-chip-copy";
 
-    const title = document.createElement("h3");
-    title.textContent = character.name;
-
-    const copy = document.createElement("p");
-    copy.textContent = `${character.title}. ${character.summary}`;
-
-    const meta = document.createElement("div");
-    meta.className = "agent-meta";
-    meta.innerHTML = `
-      <span>${character.providerLabel}</span>
-      <span>${character.defaultModelLabel}</span>
-      <span>${character.handle}</span>
-    `;
-
-    main.append(title, copy, meta);
-
-    const actions = document.createElement("div");
-    actions.className = "agent-actions";
+    const name = document.createElement("strong");
+    name.textContent = character.name;
 
     const status = document.createElement("span");
-    status.className = "agent-status";
+    status.className = "roster-chip-status";
 
-    const muteButton = document.createElement("button");
-    muteButton.type = "button";
-    muteButton.className = "mute-button";
-    muteButton.dataset.action = "toggle-silence";
-
-    actions.append(status, muteButton);
-    card.append(createAvatar(character, "avatar--roster"), main, actions);
-    DOM.rosterGrid.append(card);
+    info.append(name, status);
+    chip.append(createAvatar(character, "avatar--roster"), info);
+    DOM.rosterStrip.append(chip);
   }
 
   updateRosterStatuses();
@@ -161,10 +139,22 @@ function appendMessage(message) {
 
     const meta = document.createElement("div");
     meta.className = "message-meta";
-    meta.innerHTML = `
-      <span class="message-name">${character.name}</span>
-      <span class="message-provider">${message.provider}</span>
-    `;
+
+    const name = document.createElement("span");
+    name.className = "message-name";
+    name.textContent = character.name;
+
+    meta.append(name);
+
+    if (message.replyToAgentId) {
+      const replyTarget = getCharacterMeta(message.replyToAgentId);
+      if (replyTarget) {
+        const replyTag = document.createElement("span");
+        replyTag.className = "message-reply";
+        replyTag.textContent = `a ${replyTarget.name}`;
+        meta.append(replyTag);
+      }
+    }
 
     const body = document.createElement("div");
     body.className = "message-body";
@@ -178,7 +168,11 @@ function appendMessage(message) {
 
     const meta = document.createElement("div");
     meta.className = "message-meta";
-    meta.innerHTML = `<span class="message-name">${message.role === "user" ? "Tu" : "Mesa"}</span>`;
+
+    const name = document.createElement("span");
+    name.className = "message-name";
+    name.textContent = message.role === "user" ? "Tu" : "Mesa";
+    meta.append(name);
 
     const body = document.createElement("div");
     body.className = "message-body";
@@ -192,21 +186,15 @@ function appendMessage(message) {
   scrollConversationToBottom();
 }
 
-function setAllStatuses(status) {
-  for (const character of CHARACTERS) {
-    state.statuses[character.id] = state.silencedAgents.has(character.id) ? "silenced" : status;
-  }
-  updateRosterStatuses();
-}
-
 function resetStatuses() {
   for (const character of CHARACTERS) {
     state.statuses[character.id] = state.silencedAgents.has(character.id) ? "silenced" : "active";
   }
+
   updateRosterStatuses();
 }
 
-function markRoundStatuses(selectedAgentIds, activeAgentId = null) {
+function markRoundStatuses(pendingQueue, activeAgentId = null) {
   for (const character of CHARACTERS) {
     if (state.silencedAgents.has(character.id)) {
       state.statuses[character.id] = "silenced";
@@ -218,7 +206,7 @@ function markRoundStatuses(selectedAgentIds, activeAgentId = null) {
       continue;
     }
 
-    if (selectedAgentIds.includes(character.id)) {
+    if (pendingQueue.includes(character.id)) {
       state.statuses[character.id] = "waiting";
       continue;
     }
@@ -237,13 +225,9 @@ function showTypingIndicator(characterId) {
   const character = getCharacterMeta(characterId);
   DOM.typingZone.innerHTML = "";
 
-  const wrapper = document.createElement("div");
-  wrapper.className = "typing-entry";
-  wrapper.style.setProperty("--agent-accent", character.accent);
-
-  const card = document.createElement("div");
-  card.className = "typing-card";
-  card.append(createAvatar(character, "avatar--typing"));
+  const entry = document.createElement("div");
+  entry.className = "typing-entry";
+  entry.style.setProperty("--agent-accent", character.accent);
 
   const copy = document.createElement("div");
   copy.className = "typing-copy";
@@ -258,10 +242,10 @@ function showTypingIndicator(characterId) {
   dots.className = "typing-dots";
   dots.innerHTML = "<i></i><i></i><i></i>";
 
+  entry.append(createAvatar(character, "avatar--typing"), copy, dots);
   copy.append(name, label);
-  card.append(copy, dots);
-  wrapper.append(card);
-  DOM.typingZone.append(wrapper);
+
+  DOM.typingZone.append(entry);
   scrollConversationToBottom();
 }
 
@@ -294,14 +278,14 @@ function cancelRound(reason = "manual") {
   clearTypingIndicator();
   state.activeRound = null;
   setRoundUiState(false);
-  setTopbarStatus(reason === "manual" ? "Ronda interrumpida" : "Mesa lista", "ready");
+  setTopbarStatus(reason === "manual" ? "Ronda cortada" : "Mesa lista", "ready");
   resetStatuses();
 }
 
 function buildHistoryPayload() {
   return state.messages
     .filter((message) => message.role === "user" || message.role === "agent")
-    .slice(-18)
+    .slice(-20)
     .map((message) => ({
       role: message.role,
       speakerId: message.speakerId || null,
@@ -310,7 +294,7 @@ function buildHistoryPayload() {
 }
 
 async function playRound(round, token) {
-  const pendingQueue = [...round.selectedAgentIds];
+  const pendingQueue = [...(round.queueAgentIds || round.selectedAgentIds || [])];
   markRoundStatuses(pendingQueue, pendingQueue[0] || null);
 
   for (const step of round.steps) {
@@ -319,16 +303,17 @@ async function playRound(round, token) {
     }
 
     if (state.silencedAgents.has(step.agentId)) {
-      pendingQueue.splice(pendingQueue.indexOf(step.agentId), 1);
+      const skippedIndex = pendingQueue.indexOf(step.agentId);
+      if (skippedIndex >= 0) pendingQueue.splice(skippedIndex, 1);
       continue;
     }
 
     markRoundStatuses(pendingQueue, step.agentId);
-    setTopbarStatus(`${getCharacterMeta(step.agentId).name} esta pensando`, "busy");
+    setTopbarStatus(`${getCharacterMeta(step.agentId).name} entra a la charla`, "busy");
 
     await delayForRound(step.timing.thinkingMs, token);
     showTypingIndicator(step.agentId);
-    setTopbarStatus(`${getCharacterMeta(step.agentId).name} esta escribiendo`, "busy");
+    setTopbarStatus(`${getCharacterMeta(step.agentId).name} escribe`, "busy");
 
     await delayForRound(step.timing.typingMs, token);
     clearTypingIndicator();
@@ -337,11 +322,12 @@ async function playRound(round, token) {
       id: step.id,
       role: "agent",
       speakerId: step.agentId,
+      replyToAgentId: step.replyToAgentId || null,
       text: step.text,
-      provider: `${step.provider} / ${step.model}`,
     });
 
-    pendingQueue.splice(pendingQueue.indexOf(step.agentId), 1);
+    const completedIndex = pendingQueue.indexOf(step.agentId);
+    if (completedIndex >= 0) pendingQueue.splice(completedIndex, 1);
     markRoundStatuses(pendingQueue, pendingQueue[0] || null);
   }
 }
@@ -351,16 +337,14 @@ async function submitMessage(text) {
     cancelRound("superseded");
   }
 
-  const message = {
+  appendMessage({
     id: crypto.randomUUID(),
     role: "user",
     text,
-  };
+  });
 
-  appendMessage(message);
   setRoundUiState(true);
-  setTopbarStatus("La mesa decide el orden", "busy");
-  setAllStatuses("active");
+  setTopbarStatus("La mesa se acomoda", "busy");
 
   const token = crypto.randomUUID();
   const controller = new AbortController();
@@ -387,7 +371,7 @@ async function submitMessage(text) {
 
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
-      throw new Error(payload.error || "La mesa no pudo responder.");
+      throw new Error(payload.error || "La mesa se quedo callada por un momento.");
     }
 
     if (!state.activeRound || state.activeRound.token !== token || state.activeRound.cancelled) {
@@ -400,8 +384,9 @@ async function submitMessage(text) {
       appendMessage({
         id: crypto.randomUUID(),
         role: "system",
-        text: error.message || "La mesa perdio el hilo en esta ronda.",
+        text: "La mesa se quedo en silencio un segundo. Intenta de nuevo.",
       });
+      setTopbarStatus("La mesa perdio el hilo", "alert");
     }
   } finally {
     if (state.activeRound?.token === token) {
@@ -418,8 +403,7 @@ function handleRosterClick(event) {
   const button = event.target.closest("[data-action='toggle-silence']");
   if (!button) return;
 
-  const card = button.closest(".agent-card");
-  const characterId = card?.dataset.agentId;
+  const characterId = button.dataset.agentId;
   if (!characterId) return;
 
   if (state.silencedAgents.has(characterId)) {
@@ -462,7 +446,7 @@ function bindEvents() {
     cancelRound("manual");
   });
 
-  DOM.rosterGrid.addEventListener("click", handleRosterClick);
+  DOM.rosterStrip.addEventListener("click", handleRosterClick);
 }
 
 function bootstrap() {
@@ -477,7 +461,7 @@ function bootstrap() {
   appendMessage({
     id: crypto.randomUUID(),
     role: "system",
-    text: "Mesa activa. Puedes mencionar a @sukuna, @gojo, @itadori, @megumi, @todo o @mahito. Si no mencionas a nadie, la orquestacion elige una combinacion de voces para mantener la ronda viva sin saturarla.",
+    text: "La mesa ya estaba hablando. Entra cuando quieras; nombrar a Gojo, Sukuna, Itadori, Megumi, Todo o Mahito funciona con o sin @.",
   });
 }
 
