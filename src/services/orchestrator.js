@@ -60,6 +60,28 @@ const FOCUS_CONTINUATION_PATTERNS = [
   /^\s*[¿?]?\s*(?:y\s+eso|como\s+asi|cómo\s+así|como|cómo|y\s+entonces|entonces)\s*[?!.]*$/i,
   /^\s*[¿?]?\s*(?:por\s+eso|asi\s+que|as[ií]\s+que)\s*[?!.]*$/i,
 ];
+const SOFT_CONTINUATION_PATTERNS = [
+  /^\s*(?:bien|todo\s+bien|gracias|muchas\s+gracias|genial|claro|entiendo|ya\s+veo|ok|okay|vale|dale|si|sí|no|igual|jaja+|jeje+|aj[aá]|hmm+)\b/i,
+  /^\s*(?:bien|todo\s+bien)\s*,?\s*(?:gracias)?\s*[.!]*$/i,
+];
+const GROUP_OPINION_PATTERNS = [
+  /\bque\s+(?:opinan|piensan|creen)\b/i,
+  /\bqué\s+(?:opinan|piensan|creen)\b/i,
+  /\bquien\s+ganaria\b/i,
+  /\bquién\s+ganaría\b/i,
+  /\bque\s+harian\b/i,
+  /\bqué\s+harían\b/i,
+  /\bque\s+harian\s+ustedes\b/i,
+  /\bqué\s+harían\s+ustedes\b/i,
+];
+const SOCIAL_CROSS_TALK_PATTERNS = [
+  /\bcallados\b/i,
+  /\baburrid/i,
+  /\blocos\b/i,
+  /\bpeleando\b/i,
+  /\bdramatic/i,
+  /\bruidosos\b/i,
+];
 
 const CHARACTER_REFERENCE_PATTERNS = CHARACTERS.map((character) => ({
   characterId: character.id,
@@ -216,6 +238,18 @@ function detectDirectTargetSpeaker(text, references) {
   return null;
 }
 
+function isBroadGroupPrompt(text, references) {
+  const lowered = String(text || "").toLowerCase();
+  return (
+    includesSignal(lowered, SIGNAL_GROUPS.group) ||
+    includesSignal(lowered, SIGNAL_GROUPS.debate) ||
+    references.all.length >= 2 ||
+    GROUP_OPINION_PATTERNS.some((pattern) => pattern.test(text)) ||
+    SOCIAL_CROSS_TALK_PATTERNS.some((pattern) => pattern.test(text)) ||
+    /ganaria|vs\b|versus|mejor|pelea/i.test(text)
+  );
+}
+
 function getLastInteraction(history) {
   const lastUserIndex = [...history]
     .map((entry, index) => ({ entry, index }))
@@ -231,6 +265,12 @@ function getLastInteraction(history) {
   const userReferences = extractCharacterReferences(userEntry.text);
   const directTarget = detectDirectTargetSpeaker(userEntry.text, userReferences);
   const primaryResponderId = agentEntries[0]?.speakerId || null;
+  const lastAgentEntry = agentEntries.at(-1) || null;
+  const agentAskedQuestion = agentEntries.some((entry) => /\?/.test(entry.text));
+  const singleSpeakerId =
+    agentEntries.length > 0 && new Set(agentEntries.map((entry) => entry.speakerId)).size === 1
+      ? agentEntries[0]?.speakerId || null
+      : null;
 
   return {
     userEntry,
@@ -238,7 +278,10 @@ function getLastInteraction(history) {
     userReferences,
     directTargetSpeakerId: directTarget?.characterId || null,
     primaryResponderId,
-    currentFocusId: directTarget?.characterId || primaryResponderId || null,
+    singleSpeakerId,
+    lastAgentEntry,
+    agentAskedQuestion,
+    currentFocusId: directTarget?.characterId || singleSpeakerId || null,
   };
 }
 
@@ -269,9 +312,27 @@ function deriveFocusState(history) {
   return {
     lastTargetSpeakerId: lastInteraction.directTargetSpeakerId,
     lastPrimaryResponderId: lastInteraction.primaryResponderId,
+    lastAgentAskedQuestion: lastInteraction.agentAskedQuestion,
     currentFocusId: lastInteraction.currentFocusId,
     focusTTL: 1,
   };
+}
+
+function isSoftContinuationMessage(text, lastInteraction) {
+  const trimmed = String(text || "").trim();
+  if (!trimmed || countWords(trimmed) > 12) {
+    return false;
+  }
+
+  if (SOFT_CONTINUATION_PATTERNS.some((pattern) => pattern.test(trimmed))) {
+    return true;
+  }
+
+  if (lastInteraction?.agentAskedQuestion) {
+    return true;
+  }
+
+  return false;
 }
 
 function detectTargetSpeaker({ text, references, history }) {
@@ -280,8 +341,13 @@ function detectTargetSpeaker({ text, references, history }) {
     return directTarget;
   }
 
+  if (isBroadGroupPrompt(text, references)) {
+    return null;
+  }
+
   const focusState = deriveFocusState(history);
-  if (focusState?.currentFocusId && isFocusContinuationMessage(text, references)) {
+  const lastInteraction = getLastInteraction(history);
+  if (focusState?.currentFocusId && (isFocusContinuationMessage(text, references) || isSoftContinuationMessage(text, lastInteraction))) {
     return {
       characterId: focusState.currentFocusId,
       reason: "focus_continuation",
@@ -369,6 +435,11 @@ function buildSceneContext(text, references, history, randomness = 1) {
   const targetSpeaker = detectTargetSpeaker({ text, references, history });
   const requestedIds = [...new Set([...(targetSpeaker?.characterId ? [targetSpeaker.characterId] : []), ...references.all])];
   const requestedPairTension = buildRequestedPairTension(requestedIds);
+  const opinionPrompt = GROUP_OPINION_PATTERNS.some((pattern) => pattern.test(text));
+  const socialCrossTalk = SOCIAL_CROSS_TALK_PATTERNS.some((pattern) => pattern.test(text));
+  const namedNonTargetIds = targetSpeaker?.characterId
+    ? references.all.filter((characterId) => characterId !== targetSpeaker.characterId)
+    : references.all;
 
   return {
     text,
@@ -385,6 +456,9 @@ function buildSceneContext(text, references, history, randomness = 1) {
     targetSpeakerId: targetSpeaker?.characterId || null,
     targetReason: targetSpeaker?.reason || null,
     focusState,
+    opinionPrompt,
+    socialCrossTalk,
+    namedNonTargetIds,
     directReferenceCount: references.all.length,
     solo: includesSignal(lowered, SIGNAL_GROUPS.solo),
     debate: includesSignal(lowered, SIGNAL_GROUPS.debate),
@@ -399,7 +473,11 @@ function buildSceneContext(text, references, history, randomness = 1) {
     hottestPair: requestedPairTension.hottestPair,
     hottestPairHeat: requestedPairTension.hottestPairHeat,
     elevatedCrossTalk:
-      requestedPairTension.hottestPairHeat >= 70 || requestedIds.length >= 2 || includesSignal(lowered, SIGNAL_GROUPS.debate),
+      requestedPairTension.hottestPairHeat >= 70 ||
+      requestedIds.length >= 2 ||
+      includesSignal(lowered, SIGNAL_GROUPS.debate) ||
+      opinionPrompt ||
+      socialCrossTalk,
     recentAgents,
     lastHistorySpeakerId: recentAgents.at(-1)?.speakerId || null,
     randomness,
@@ -415,6 +493,9 @@ function determineRoundPlan(context, availableCount) {
   if (context.targetSpeakerId && context.directReferenceCount <= 1 && !context.groupAsked && !context.comparison && !context.debate) {
     minSteps = 1;
     desiredSteps = 1;
+  } else if ((context.groupAsked || context.opinionPrompt || context.socialCrossTalk) && !context.targetSpeakerId) {
+    minSteps = 2;
+    desiredSteps = 3;
   } else if (context.solo && context.directReferenceCount <= 1) {
     desiredSteps = 1;
   } else if (context.groupAsked && context.directReferenceCount === 0) {
@@ -441,6 +522,11 @@ function determineRoundPlan(context, availableCount) {
   }
 
   if (context.targetSpeakerId && context.directReferenceCount >= 2) {
+    desiredSteps = Math.max(desiredSteps, Math.min(hardCap, context.hottestPairHeat >= 70 ? 4 : 3));
+  }
+
+  if (context.targetSpeakerId && context.namedNonTargetIds.length > 0) {
+    minSteps = Math.max(minSteps, 2);
     desiredSteps = Math.max(desiredSteps, Math.min(hardCap, context.hottestPairHeat >= 70 ? 4 : 3));
   }
 
@@ -573,6 +659,16 @@ function scoreFollowUpSpeaker({ character, context, roundEntries, history, plan 
 
   if (roundOccurrences === 0) score += 14;
   if (context.requestedIds.includes(character.id) && roundOccurrences === 0) score += 34;
+  if (context.opinionPrompt && roundOccurrences === 0) score += 12;
+  if (context.socialCrossTalk && roundOccurrences === 0) score += 10;
+  if (
+    context.targetSpeakerId &&
+    previousSpeakerId === context.targetSpeakerId &&
+    context.namedNonTargetIds.includes(character.id) &&
+    roundOccurrences === 0
+  ) {
+    score += 42;
+  }
   if (plan.allowReentry && roundOccurrences === 1 && character.id === firstSpeakerId && roundEntries.length >= 2) {
     score += character.reentryBias * 22;
     score += directRule?.reentryBias || 0;
@@ -628,6 +724,7 @@ function determinePurpose({ roundEntries, context, plan }) {
   if (roundEntries.length + 1 >= plan.desiredSteps) return "close";
   if (context.debate || context.directReferenceCount >= 2 || context.comparison) return "react";
   if (context.hottestPairHeat >= 70 && roundEntries.length < plan.desiredSteps) return "react";
+  if (context.opinionPrompt || context.socialCrossTalk) return "react";
   if (roundEntries.length === 1 && !context.solo && (context.groupAsked || context.wordCount > 18)) return "react";
   return "close";
 }
@@ -785,7 +882,25 @@ function shouldStopRound({ context, plan, roundEntries, nextCandidateScore, fail
     : [];
 
   if (context.solo && roundEntries.length >= 1) return true;
-  if (context.shortPing && context.directReferenceCount <= 1 && roundEntries.length >= 1) return true;
+  if (
+    context.shortPing &&
+    context.directReferenceCount <= 1 &&
+    !context.opinionPrompt &&
+    !context.socialCrossTalk &&
+    !context.groupAsked &&
+    roundEntries.length >= 1
+  ) {
+    return true;
+  }
+  if ((context.opinionPrompt || context.socialCrossTalk) && roundEntries.length < 2) {
+    return false;
+  }
+  if ((context.opinionPrompt || context.socialCrossTalk) && roundEntries.length < 3) {
+    return false;
+  }
+  if (context.targetSpeakerId && context.namedNonTargetIds.length > 0 && roundEntries.length < 2) {
+    return false;
+  }
   if (unresolvedNamedTargets.length > 0 && nextCandidateScore >= 96 && roundEntries.length < plan.hardCap) {
     return false;
   }
@@ -947,7 +1062,9 @@ export async function createRoundtableConversation({ text, history, silencedAgen
             : character.id === planned.context.targetSpeakerId
               ? "target_focus"
               : "secondary"
-          : "group",
+          : steps.length === 0
+            ? "group"
+            : "group_secondary",
         turnIndex: steps.length,
         purpose: stepPreview.purpose,
         replyToAgentId: stepPreview.replyToAgentId,

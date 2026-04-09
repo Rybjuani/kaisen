@@ -162,7 +162,7 @@ export function buildAgentMessages({
   const ownershipLines =
     responseRole === "target_owner"
       ? [
-          `El usuario te hablo a vos${targetReason === "focus_continuation" ? " y el foco viene del turno anterior" : ""}.`,
+          `El usuario te hablo a vos${targetReason === "focus_continuation" ? " y sigue hablando contigo desde el turno anterior" : ""}.`,
           "Sos el encargado de responder directamente y primero.",
           "Responde como destinatario principal con naturalidad, no como comentarista lateral.",
         ]
@@ -178,6 +178,12 @@ export function buildAgentMessages({
               "No robes la respuesta principal ni contestes como si la pregunta fuera para vos.",
               "Solo puedes comentar, provocar, contradecir, burlarte, respaldar o rematar despues de esa respuesta principal.",
             ]
+          : responseRole === "group_secondary"
+            ? [
+                "No eres la voz inicial de la escena.",
+                "Entra sobre lo que ya dijo otro personaje; no respondas al usuario como si empezaras desde cero.",
+                "Tu trabajo es empujar la conversacion: provocar, apoyar, torcer o rematar lo que ya se dijo.",
+              ]
           : ["No hay un destinatario unico: entra como parte de una conversacion grupal."];
 
   const guidanceByPurpose = {
@@ -231,6 +237,8 @@ export function buildAgentMessages({
       ? "- Responde la pregunta o comentario del usuario de frente; esa respuesta te pertenece a ti."
       : responseRole === "secondary"
         ? "- No respondas como destinatario principal. Tu trabajo es reaccionar despues, no contestar por el otro."
+        : responseRole === "group_secondary"
+          ? "- No abras una respuesta nueva al usuario. Reacciona a la voz anterior y mueve la mesa."
         : "- Entra de forma natural segun tu rol en la escena.",
     "- Si reaccionas a otro personaje, la primera frase debe tocar lo que acaba de decir o insinuar y sonar a contestacion real.",
     "- Si respondes a otro personaje, hablale a esa persona; no expliques desde fuera lo que piensas de ella.",
